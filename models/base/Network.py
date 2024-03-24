@@ -25,6 +25,24 @@ class MYNET(nn.Module):
         if self.args.dataset == 'cub200':
             self.encoder = resnet18(True, args)  # pretrained=True follow TOPIC, models for cub is imagenet pre-trained. https://github.com/xyutao/fscil/issues/11#issuecomment-687548790
             self.num_features = 512
+        if self.args.dataset in ['swat']:
+            self.encoder = nn.Sequential(
+                nn.Embedding(256, 32),
+                nn.Conv2d(4, 32, (5, 1), padding=(1,0)),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Dropout(0.3),
+                nn.Conv2d(32, 64, (5, 1), padding=(1,0)),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Dropout(0.3),
+                nn.Conv2d(64, 32, (5, 1), padding=(1,0)),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Dropout(0.3)
+            )
+            self.encoder[-4].is_warp_conv = True
+            self.num_features = 32
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         self.fc = nn.Linear(self.num_features, self.args.num_classes, bias=False)
@@ -33,7 +51,7 @@ class MYNET(nn.Module):
     def forward_metric(self, x):
         x = self.encode(x)
         if 'cos' in self.mode:
-            x = F.linear(F.normalize(x, p=2, dim=-1), F.normalize(self.fc.weight, p=2, dim=-1))
+            x = F.linear(F.normalize(x, p=2, dim=-1), F.normalize(self.fc.weight, p=2, dim=-1)) # 计算两个归一化向量的点积，也就是余弦相似度
             x = self.args.temperature * x
 
         elif 'dot' in self.mode:
@@ -74,9 +92,9 @@ class MYNET(nn.Module):
             new_fc = nn.Parameter(
                 torch.rand(len(class_list), self.num_features, device="cuda"),
                 requires_grad=True)
-            nn.init.kaiming_uniform_(new_fc, a=math.sqrt(5))
+            nn.init.kaiming_uniform_(new_fc, a=math.sqrt(5)) # 一种随机初始化方法
         else:
-            new_fc = self.update_fc_avg(data, label, class_list)
+            new_fc = self.update_fc_avg(data, label, class_list) # 根据类列表计算新的全连接层参数
 
         if 'ft' in self.args.new_mode:  # further finetune
             print('further finetune?')

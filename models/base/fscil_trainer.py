@@ -24,12 +24,14 @@ class FSCILTrainer(Trainer):
         self.model = MYNET(self.args, mode=self.args.base_mode)
         self.val_model = MYNET(self.args, mode=self.args.base_mode)
 
+        # GPU并行化处理
         self.model = nn.DataParallel(self.model, list(range(self.args.num_gpu)))
         self.model = self.model.cuda()
 
         self.val_model = nn.DataParallel(self.val_model, list(range(self.args.num_gpu)))
         self.val_model = self.val_model.cuda()
 
+        # 加载模型参数
         if self.args.model_dir is not None:
             print('Loading init parameters from: %s' % self.args.model_dir)
             self.best_model_dict = torch.load(self.args.model_dir)['params']
@@ -40,6 +42,7 @@ class FSCILTrainer(Trainer):
                 print('WARING: Random init weights for new sessions!')
             self.best_model_dict = deepcopy(self.model.state_dict())
 
+    # 设置基类任务的优化器和学习率调度器
     def get_optimizer_base(self):
 
         optimizer = torch.optim.SGD(self.model.parameters(), self.args.lr_base, momentum=0.9, nesterov=True,
@@ -71,6 +74,7 @@ class FSCILTrainer(Trainer):
         columns = ['num_session', 'acc', 'base_acc', 'new_acc', 'base_acc_given_new', 'new_acc_given_base']
         acc_df = pd.DataFrame(columns=columns)
 
+        # 对于每个任务
         for session in range(args.start_session, args.sessions):
 
             train_set, trainloader, testloader = self.get_dataloader(session)
@@ -84,13 +88,13 @@ class FSCILTrainer(Trainer):
 
                 if args.epochs_base == 0:
                     if 'ft' in args.new_mode:
-                        self.model = replace_base_fc(train_set, testloader.dataset.transform, self.model, args)
+                        self.model = replace_base_fc(train_set, testloader.dataset.transform, self.model, args) # 将分类器原型替换为平均特征向量
                         self.model.module.mode = args.new_mode
                         self.val_model.load_state_dict(deepcopy(self.model.state_dict()), strict=False)
                         self.val_model.module.mode = args.new_mode
-                        tsl, tsa, logs = test(self.val_model, testloader, args.epochs_base, args, session)
-                        switch_module(self.model)
-                        compute_orthonormal(args, self.model, train_set)
+                        tsl, tsa, logs = test(self.val_model, testloader, args.epochs_base, args, session) # 测试基类的性能
+                        switch_module(self.model) # 替换特定的卷积层
+                        compute_orthonormal(args, self.model, train_set) # 计算新的正交基底
                         identify_importance(args, self.model, train_set, keep_ratio=args.fraction_to_keep)
                         self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
                     else:
@@ -98,7 +102,7 @@ class FSCILTrainer(Trainer):
                         self.model.module.mode = args.new_mode
                         tsl, tsa, logs = test(self.model, testloader, args.epochs_base, args, session)
                         self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
-                    acc_df = acc_df.append(logs, ignore_index=True)
+                    acc_df = acc_df._append(logs, ignore_index=True)
 
 
                 else:
@@ -164,15 +168,15 @@ class FSCILTrainer(Trainer):
                 self.model.module.mode = self.args.new_mode
                 self.model.eval()
                 trainloader.dataset.transform = testloader.dataset.transform
-                self.model.module.update_fc(trainloader, np.unique(train_set.targets), session)
+                self.model.module.update_fc(trainloader, np.unique(train_set.targets), session) # 在分类层中添加新类的参数
 
                 if 'ft' in args.new_mode:
-                    restore_weight(self.model)
+                    restore_weight(self.model)  # 恢复特征空间
                     self.val_model.load_state_dict(deepcopy(self.model.state_dict()), strict=False)
                     tsl, tsa, logs = test(self.val_model, testloader, 0, args, session)
                 else:
                     tsl, tsa, logs = test(self.model, testloader, 0, args, session)
-                acc_df = acc_df.append(logs, ignore_index=True)
+                acc_df = acc_df._append(logs, ignore_index=True)
 
                 # save model
                 self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))

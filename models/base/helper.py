@@ -95,22 +95,22 @@ def test(model, testloader, epoch, args, session):
         for i, batch in enumerate(tqdm_gen, 1):
             data, test_label = [_.cuda() for _ in batch]
             logits = model(data)
-            logits = logits[:, :test_class]
+            logits = logits[:, :test_class] # 选择前 test_class 个类别的预测结果
             loss = F.cross_entropy(logits, test_label)
             acc = count_acc(logits, test_label)
 
             base_idxs = test_label < args.base_class
             if torch.any(base_idxs):
-                acc_base = count_acc(logits[base_idxs, :args.base_class], test_label[base_idxs])
-                acc_base_given_new = count_acc(logits[base_idxs, :], test_label[base_idxs])
-                va_base.add(acc_base, len(test_label[base_idxs]))
+                acc_base = count_acc(logits[base_idxs, :args.base_class], test_label[base_idxs]) # 只预测基类的情况下基类预测正确的数量
+                acc_base_given_new = count_acc(logits[base_idxs, :], test_label[base_idxs]) # 给出新类的情况下基类预测正确的数量
+                va_base.add(acc_base, len(test_label[base_idxs])) # 不断计算平均准确率
                 va_base_given_new.add(acc_base_given_new, len(test_label[base_idxs]))
 
 
             new_idxs = test_label >= args.base_class
             if torch.any(new_idxs):
-                acc_new = count_acc(logits[new_idxs, args.base_class:], test_label[new_idxs] - args.base_class)
-                acc_new_given_base = count_acc(logits[new_idxs, :], test_label[new_idxs])
+                acc_new = count_acc(logits[new_idxs, args.base_class:], test_label[new_idxs] - args.base_class) # 只预测新类的情况下新类预测正确的数量
+                acc_new_given_base = count_acc(logits[new_idxs, :], test_label[new_idxs]) # 给出基类的情况下基类预测正确的数量
                 va_new.add(acc_new, len(test_label[new_idxs]))
                 va_new_given_base.add(acc_new_given_base, len(test_label[new_idxs]))
 

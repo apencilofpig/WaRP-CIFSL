@@ -102,7 +102,7 @@ class Timer():
             return '{}m'.format(round(x / 60))
         return '{}s'.format(x)
 
-
+# 预测正确的数量
 def count_acc(logits, label):
     pred = torch.argmax(logits, dim=1)
     if torch.cuda.is_available():
@@ -138,7 +138,7 @@ class BatchSampler(Sampler):
 
 def compute_orthonormal(args, net, trainset):
     training = net.training
-    indices = torch.randperm(len(trainset))[:20 * args.batch_size_base]
+    indices = torch.randperm(len(trainset))[:20 * args.batch_size_base] # 随机选择一部分数据计算正交基
 
 
     trainset = torch.utils.data.Subset(trainset, indices)
@@ -147,7 +147,7 @@ def compute_orthonormal(args, net, trainset):
     net.forward_covariance = None
     net.batch_count = 0
 
-    cdmodule_list = [module for module in net.modules() if isinstance(module, WaRPModule)]
+    cdmodule_list = [module for module in net.modules() if isinstance(module, WaRPModule)] # 获取所有的WaRP模块
     for m in cdmodule_list:
         m.flag = False
     epoch_iter = tqdm(dl)
@@ -155,28 +155,28 @@ def compute_orthonormal(args, net, trainset):
     with torch.no_grad():
         for x, y in epoch_iter:
             x, y = x.cuda(), y.cuda()
-            encoded_x = net.module.encode(x)[:, :args.base_class]
+            encoded_x = net.module.encode(x)[:, :args.base_class] # 进行前向传播，以便后续计算warp模块的激活协方差
             for m in cdmodule_list:
-                m.post_backward()
+                m.post_backward() # 计算每个warp模块的激活协方差
 
         module_it = tqdm(cdmodule_list)
         for m in module_it:
             m.flag = True
             forward_cov = getattr(m, 'forward_covariance')
 
-            V, S, UT_forward = torch.linalg.svd(forward_cov, full_matrices=True)
+            V, S, UT_forward = torch.linalg.svd(forward_cov, full_matrices=True) # 奇异值分解
 
             weight = getattr(m, 'weight')
             bias = getattr(m, 'bias')
             if weight.ndim != 2:
                 weight = weight.reshape(weight.shape[0], -1)
 
-            UT_backward = torch.eye(weight.shape[0])
-            UT_backward = same_device(ensure_tensor(UT_backward), weight)
+            UT_backward = torch.eye(weight.shape[0]) # 单位矩阵
+            UT_backward = same_device(ensure_tensor(UT_backward), weight) # 保证UT_backward和weight在同一设备上
 
 
             UT_forward = same_device(UT_forward, weight)
-            basis_coefficients = UT_backward @ weight @ UT_forward.t()
+            basis_coefficients = UT_backward @ weight @ UT_forward.t() # 新基底的参数
             m.UT_forward = UT_forward
             m.UT_backward = UT_backward
             m.basis_coefficients.data = basis_coefficients.data
@@ -213,7 +213,7 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
     for module in model.modules():
         if isinstance(module, WaRPModule):
 
-            module.coeff_mask_prev = module.coeff_mask.data
+            module.coeff_mask_prev = module.coeff_mask.data # 记录上一个任务的掩码
             module.coeff_mask.data = torch.zeros(module.coeff_mask.shape).cuda().data
 
     training = model.training
@@ -231,12 +231,12 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
 
         for module in model.modules():
             if isinstance(module, WaRPModule):
-                temp[module] = module.basis_coeff.grad.abs().detach().cpu().numpy().copy()
+                temp[module] = module.basis_coeff.grad.abs().detach().cpu().numpy().copy() # 记录新基底系数梯度的绝对值
 
         for module in model.modules():
             if isinstance(module, WaRPModule):
                 if module not in importances:
-                    importances[module] = temp[module]
+                    importances[module] = temp[module] # 梯度的绝对值求和
                 else:
                     importances[module] += temp[module]
 
@@ -246,6 +246,7 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
     masks = importance_masks_module(importances, threshold)
 
 
+    # 合并之前任务的掩码，也就是保留所有关于旧知识的参数
     for module in model.modules():
         if isinstance(module, WaRPModule):
             coeff_mask = masks[module]
@@ -253,6 +254,7 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
             module.coeff_mask.data = 1 - (1 - coeff_mask.data) * (1 - module.coeff_mask_prev.data)
 
 
+    # 保存新合成的掩码
     # -------------------------- get accumulative mask ratio ---------------------------------
     for module in model.modules():
         if isinstance(module, WaRPModule):
@@ -264,6 +266,7 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
     model.zero_grad()
     model.training = training
 
+    # 对于非WaRP模块，冻结参数
     for module in model.modules():
         if hasattr(module, 'weight') and not isinstance(module, WaRPModule):
             for param in module.parameters():
@@ -274,21 +277,24 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
 
 
 
-
+# 将所有参数展平，输出一个一维数组
 def flatten_importances_module(importances):
     return np.concatenate([
         params.flatten()
         for _, params in importances.items()
     ])
 
+# 返回每个模块的重要性
 def map_importances_module_dict(fn, importances):
     return {module: fn(params)
             for module, params in importances.items()}
 
+# 返回一个字典，记录每个模块相应的参数掩码
 def importance_masks_module(importances, threshold):
     return map_importances_module_dict(lambda imp: threshold_mask(imp, threshold), importances)
 
 
+# 通过参数保留比率计算阈值
 def fraction_threshold(tensor, fraction):
     """Compute threshold quantile for a given scoring function
 
@@ -309,6 +315,7 @@ def fraction_threshold(tensor, fraction):
     threshold = np.quantile(tensor, 1-fraction)
     return threshold
 
+# 根据给定阈值生成二值掩码
 def threshold_mask(tensor, threshold):
     """Given a fraction or threshold, compute binary mask
 
@@ -329,7 +336,7 @@ def threshold_mask(tensor, threshold):
 
 
 
-
+# 将权重空间变换为原来的
 def restore_weight(net):
     cdmodule_list = [module for module in net.modules() if isinstance(module, WaRPModule)]
     for module in cdmodule_list:

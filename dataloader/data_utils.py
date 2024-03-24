@@ -24,6 +24,13 @@ def set_up_datasets(args):
         args.way = 5
         args.shot = 5
         args.sessions = 9
+    if args.dataset == 'swat':
+        import dataloader.swat.swat as Dataset
+        args.base_class = 11
+        args.num_classes=36
+        args.way = 5
+        args.shot = 5
+        args.sessions = 6
     args.Dataset=Dataset
     return args
 
@@ -53,6 +60,11 @@ def get_base_dataloader(args):
         trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True,
                                              index=class_index, base_sess=True)
         testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False, index=class_index)
+
+    if args.dataset == 'swat':
+        trainset = args.Dataset.Swat(root=args.dataroot, train=True,
+                                       index=class_index, base_sess=True)
+        testset = args.Dataset.Swat(root=args.dataroot, train=False, index=class_index)
 
 
     trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=args.batch_size_base, shuffle=True,
@@ -108,6 +120,9 @@ def get_new_dataloader(args,session):
     if args.dataset == 'mini_imagenet':
         trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True,
                                        index_path=txt_path)
+    if args.dataset == 'swat':
+        trainset = args.Dataset.Swat(root=args.dataroot, train=True,
+                                       index_path=txt_path)
     if args.batch_size_new == 0:
         batch_size_new = trainset.__len__()
         trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size_new, shuffle=False,
@@ -127,6 +142,9 @@ def get_new_dataloader(args,session):
                                       index=class_new)
     if args.dataset == 'mini_imagenet':
         testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False,
+                                      index=class_new)
+    if args.dataset == 'swat':
+        testset = args.Dataset.Swat(root=args.dataroot, train=False,
                                       index=class_new)
 
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=args.test_batch_size, shuffle=False,

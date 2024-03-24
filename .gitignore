@@ -1,0 +1,6 @@
+__pycache__/
+checkpoint/
+data/
+acc_logs/
+
+!data/index_list/

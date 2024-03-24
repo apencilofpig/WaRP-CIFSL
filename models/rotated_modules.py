@@ -5,6 +5,7 @@ from torch.nn.modules.utils import _pair
 from .utils import set_grad, im2col_from_conv
 
 
+# 确保输入是张量
 def ensure_tensor(x):
     # Aux functions in case mask arguments are numpy arrays
     if not isinstance(x, torch.Tensor) and x is not None:
@@ -12,6 +13,7 @@ def ensure_tensor(x):
     return x
 
 
+# 确保输入的两个张量 x_mask 和 x 在同一设备，避免出错
 def same_device(x_mask, x):
     # Aux function to ensure same device fo weight and mask
     # so _mul doesn't fail
@@ -33,9 +35,9 @@ class WaRPModule(nn.Module):
 
         self.weight = layer.weight
         self.bias = layer.bias
-        if self.weight.ndim != 2:
-            Co, Ci, k1, k2 = self.weight.shape
-            self.basis_coeff = nn.Parameter(torch.Tensor(Co, Ci*k1*k2, 1, 1), requires_grad=True)
+        if self.weight.ndim != 2: # 检查权重维度是否是2维
+            Co, Ci, k1, k2 = self.weight.shape # 将权重的形状解构为四个变量，分别表示输出通道数、输入通道数、卷积核高度和宽度
+            self.basis_coeff = nn.Parameter(torch.Tensor(Co, Ci*k1*k2, 1, 1), requires_grad=True) # 根据权重的形状创建一个参数basis_coeff，用于存储基底系数
             self.register_buffer("UT_forward_conv", torch.Tensor(Ci*k1*k2, Ci, k1, k2))
             self.register_buffer("UT_backward_conv", torch.Tensor(Co, Co, 1, 1))
         else:
@@ -43,13 +45,13 @@ class WaRPModule(nn.Module):
 
 
         # use register_buffer so model.to(device) works on fixed tensors like masks
-        self.register_buffer("forward_covariance", None)
-        self.register_buffer("basis_coefficients", torch.Tensor(self.weight.shape).reshape(self.weight.shape[0], -1))
-        self.register_buffer("coeff_mask", torch.zeros(self.basis_coeff.shape))
-        self.register_buffer("UT_forward", torch.eye(self.basis_coeff.shape[1]))
+        self.register_buffer("forward_covariance", None) # 存储前向传播的协方差矩阵
+        self.register_buffer("basis_coefficients", torch.Tensor(self.weight.shape).reshape(self.weight.shape[0], -1)) # 存储基底系数
+        self.register_buffer("coeff_mask", torch.zeros(self.basis_coeff.shape)) # 存储系数掩码
+        self.register_buffer("UT_forward", torch.eye(self.basis_coeff.shape[1])) # 单位矩阵
         self.register_buffer("UT_backward", torch.eye(self.basis_coeff.shape[0]))
 
-        self.flag = True
+        self.flag = True # 判断是否使用掩码
 
 
 class LinearWaRP(WaRPModule):
@@ -64,11 +66,13 @@ class LinearWaRP(WaRPModule):
         """
         super(LinearWaRP, self).__init__(linear_layer)
         assert isinstance(linear_layer, nn.Linear), "Layer must be a linear layer"
+        # 获取传入线性层的输入和输出
         for attr in ['in_features', 'out_features']:
             setattr(self, attr, getattr(linear_layer, attr))
 
         self.batch_count = 0
 
+    # 计算激活的协方差矩阵
     def pre_forward(self, input):
         with torch.no_grad():
             if self.bias is not None:
@@ -98,7 +102,7 @@ class LinearWaRP(WaRPModule):
             input = F.linear(input, self.weight, self.bias)
         else:
             weight = self.UT_backward @ (self.basis_coeff * self.coeff_mask).clone().detach() + self.basis_coeff * (
-                        1 - self.coeff_mask) @ self.UT_forward
+                        1 - self.coeff_mask) @ self.UT_forward # 前半部分的参数从计算图中分离，不参与反向传播
             input = F.linear(input, weight)
 
         return input
