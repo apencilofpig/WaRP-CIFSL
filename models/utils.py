@@ -25,7 +25,7 @@ def im2col(input_data, filter_h, filter_w, stride=1, pad=0):
             col[:, :, y, x, :, :] = img[:, :, y:y_max:stride, x:x_max:stride]
 
     col = col.permute((0, 4, 5, 1, 2, 3)).reshape(N * out_h * out_w, -1)
-    return col
+    return col.cuda()
 
 def im2col_from_conv(input_data, conv):
     return im2col(input_data, conv.kernel_size[0], conv.kernel_size[1], conv.stride[0], conv.padding[0])

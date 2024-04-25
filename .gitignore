@@ -4,3 +4,5 @@ data/
 acc_logs/
 
 !data/index_list/
+SWaT数据集/
+t-sne/

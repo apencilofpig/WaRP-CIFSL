@@ -2,22 +2,73 @@ import os
 import os.path as osp
 
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-def read_files_in_folder(folder_path):
-    num_to_remove = []
-    for root, dirs, files in os.walk(folder_path):
-        for file_name in files:
-            file_path = os.path.join(root, file_name)
-            with open(file_path, 'r') as file:
-                for line in file:
-                    num_to_remove.append(int(line))
+def remove_unused_index(inputs, labels, index_to_remove):
+    # 创建条件索引，标记要保留的数据
+    index_to_keep = np.ones(len(labels), dtype=bool)
+    index_to_keep[index_to_remove] = False
 
-    return num_to_remove
+    return inputs[index_to_keep], labels[index_to_keep]
+
+def get_class_items(inputs, labels, cls_idx):
+    if not hasattr(cls_idx, '__iter__'):
+        index = np.where(labels == cls_idx)[0]
+    else:
+        index = None
+        for each in cls_idx:
+            index = np.where(labels == each)[0] if index is None else np.append(index, np.where(labels == each)[0])
+    return index, inputs[index], labels[index] 
+
+def get_few_shot_from_txt():
+    index2 = open('data/index_list/swat/session_2.txt').read().splitlines()
+    index3 = open('data/index_list/swat/session_3.txt').read().splitlines()
+    index_all = np.array([int(x) for x in (index2 + index3)])
+    return index_all, inputs[index_all], labels[index_all]
+
+def generate_few_shot(inputs, labels, shot, cls_idx):
+    index_all = None
+    for idx in cls_idx:
+        index, cls_inputs, cls_labels = get_class_items(inputs, labels, idx)
+        idx_to_keep = np.random.choice(index, shot, replace=False)
+        index_all = np.concatenate((index_all, idx_to_keep), axis=0) if index_all is not None else idx_to_keep
+    return index_all, inputs[index_all], labels[index_all]
+
+def generate_all_dataset(inputs, labels):
+    # incremental_index_train, incremental_inputs_train, incremental_labels_train = generate_few_shot(inputs, labels, 5, range(26, 36))
+    incremental_index_train, incremental_inputs_train, incremental_labels_train = get_few_shot_from_txt()
+    inputs, labels = remove_unused_index(inputs, labels, incremental_index_train)
+    _, base_inputs, base_labels = get_class_items(inputs, labels, range(26))
+    _, incremental_inputs_test, incremental_labels_test = get_class_items(inputs, labels, range(26, 36))
+    
+    
+    # 找到标签为0的索引
+    zero_indices = np.where(base_labels == 0)[0]
+
+    # 从中选择要去除的数量
+    indices_to_remove = np.random.choice(zero_indices, len(zero_indices)-2000, replace=False)
+
+    base_inputs, base_labels = remove_unused_index(base_inputs, base_labels, indices_to_remove)
+
+    base_inputs_train, base_inputs_test, base_labels_train, base_labels_test = train_test_split(base_inputs, base_labels, test_size=0.2, random_state=3407)
+
+    print(incremental_index_train)
+
+    return base_inputs_train, base_labels_train, base_inputs_test, base_labels_test, incremental_inputs_train, incremental_labels_train, incremental_inputs_test, incremental_labels_test
+
+df = pd.read_csv('data/swat/swat_ieee754.csv')
+inputs = df.iloc[:, :-1].values
+labels = df.iloc[:, -1].values
+# inputs = inputs / 256.0
+# inputs = np.pad(inputs, ((0,0), (0,144-126)), mode='constant', constant_values=0)
+# inputs = inputs.reshape(inputs.shape[0], 1, 12, 12)
+inputs = inputs.reshape(inputs.shape[0], 1, -1)
+base_inputs_train, base_labels_train, base_inputs_test, base_labels_test, incremental_inputs_train, incremental_labels_train, incremental_inputs_test, incremental_labels_test = generate_all_dataset(inputs, labels)
 
 
 class Swat(Dataset):
@@ -27,66 +78,20 @@ class Swat(Dataset):
         self.root = os.path.expanduser(root)
         self.train = train  # training set or test set
         self.transform = transform
-        self.np_inputs = np.load(self.root + '/swat/ieee754_inputs.npy')
-        self.np_labels = np.load(self.root + '/swat/labels.npy').astype(np.int64)
-        self.np_inputs = np.transpose(self.np_inputs, (0, 2, 1))
-        
-        num_to_remove = read_files_in_folder('data/index_list/swat')
-
-        # 找到标签为0的索引
-        zero_indices = np.where(self.np_labels == 0)[0]
-
-        # 从中选择要去除的数量
-        indices_to_remove = np.random.choice(zero_indices, len(zero_indices)-2000, replace=False)
-
-        num_to_remove = np.concatenate((num_to_remove,indices_to_remove),axis=0)
-
-        # 创建条件索引，标记要保留的数据
-        index_to_keep = np.ones(len(self.np_labels), dtype=bool)
-        index_to_keep[num_to_remove] = False
-
-        # 使用条件索引，保留标签不为0的数据
-        filtered_np_inputs = self.np_inputs[index_to_keep]
-        filtered_np_labels = self.np_labels[index_to_keep]
-        np_inputs_train, np_inputs_test, np_labels_train, np_labels_test = train_test_split(filtered_np_inputs, filtered_np_labels, test_size=0.2, random_state=42)
         
         if train:
-            self.data = np_inputs_train
-            self.targets = np_labels_train
-            # self.data, self.targets = self.SelectfromTxt(self.data2label, index_path)
             if base_sess:
-                self.data, self.targets = self.SelectfromClasses(self.data, self.targets, index)
+                self.data, self.targets = base_inputs_train, base_labels_train
             else:
-                self.data, self.targets = self.SelectfromTxt(index_path)
+                _, self.data, self.targets = get_class_items(incremental_inputs_train, incremental_labels_train, index)
         else:
-            self.data = np_inputs_test
-            self.targets = np_labels_test
-            self.data, self.targets = self.SelectfromClasses(self.data, self.targets, index)
+            self.data = np.concatenate((base_inputs_test, incremental_inputs_test), axis=0)
+            self.targets = np.concatenate((base_labels_test, incremental_labels_test), axis=0)
+            _, self.data, self.targets = get_class_items(self.data, self.targets, index)
 
-    def SelectfromTxt(self, index_path):
-        index = open(index_path).read().splitlines()
-        data_tmp = []
-        targets_tmp = []
-        for i in index:
-            data_tmp.append(self.np_inputs[int(i)])           
-            targets_tmp.append(self.np_labels[int(i)])
+        self.data = torch.from_numpy(self.data).long()
+        self.targets = torch.from_numpy(self.targets)
 
-        return data_tmp, targets_tmp
-
-    def SelectfromClasses(self, data, targets, index):
-        data_tmp = []
-        targets_tmp = []
-        count = 0
-        for i in index:
-            ind_cl = np.where(i == targets)[0]
-            for j in ind_cl:
-                data_tmp.append(data[j])
-                targets_tmp.append(targets[j])
-                count = count + 1
-                # if count == 200:
-                #   break
-
-        return data_tmp, targets_tmp
 
     def __len__(self):
         return len(self.data)
@@ -94,3 +99,4 @@ class Swat(Dataset):
     def __getitem__(self, i):
         datas, targets = self.data[i], self.targets[i]
         return datas, targets
+    

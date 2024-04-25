@@ -12,6 +12,8 @@ from tqdm import tqdm
 from models import *
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 
 _utils_pp = pprint.PrettyPrinter()
@@ -118,6 +120,14 @@ def save_list_to_txt(name, input_list):
     f.close()
 
 
+def save_s_tne(features, labels):
+    # 创建 t-SNE 实例并拟合数据
+    tsne = TSNE(n_components=2, perplexity=50, random_state=42)
+    test_features_tsne = tsne.fit_transform(features)
+
+    np.save('features_tsne.npy', test_features_tsne)
+
+
 
 
 class BatchSampler(Sampler):
@@ -202,6 +212,7 @@ def compute_orthonormal(args, net, trainset):
                 m.basis_coeff.data = basis_coefficients.data
 
     net.training = training
+    print(f'Compute orthonormal is completed!')
 
 
 def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, session=0, way=10, new_labels=None):
@@ -272,6 +283,7 @@ def identify_importance(args, model, trainset, batchsize=60, keep_ratio=0.1, ses
             for param in module.parameters():
                 param.requires_grad = False
 
+    print(f'The identify importance of {session} is computed!')
     return model
 
 

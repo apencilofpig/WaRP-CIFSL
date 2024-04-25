@@ -135,3 +135,23 @@ def test(model, testloader, epoch, args, session):
     return vl, va, logs
 
 
+def get_features(loader, transform, model):
+    model = model.eval()
+
+    loader.dataset.transform = transform
+    embedding_list = []
+    label_list = []
+    # data_list=[]
+    with torch.no_grad():
+        for i, batch in enumerate(loader):
+            data, label = [_.cuda() for _ in batch]
+            model.module.mode = 'encoder'
+            embedding = model(data)
+
+            embedding_list.append(embedding.cpu())
+            label_list.append(label.cpu())
+    embedding_list = torch.cat(embedding_list, dim=0)
+    label_list = torch.cat(label_list, dim=0)
+    np.save('embedding_list.npy', embedding_list.numpy())
+    np.save('label_list.npy', label_list.numpy())
+    return embedding_list, label_list

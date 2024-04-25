@@ -26,11 +26,11 @@ def set_up_datasets(args):
         args.sessions = 9
     if args.dataset == 'swat':
         import dataloader.swat.swat as Dataset
-        args.base_class = 11
+        args.base_class = 26
         args.num_classes=36
         args.way = 5
         args.shot = 5
-        args.sessions = 6
+        args.sessions = 3
     args.Dataset=Dataset
     return args
 
@@ -38,7 +38,7 @@ def get_dataloader(args,session):
     if session == 0:
         trainset, trainloader, testloader = get_base_dataloader(args)
     else:
-        trainset, trainloader, testloader = get_new_dataloader(args)
+        trainset, trainloader, testloader = get_new_dataloader(args, session)
     return trainset, trainloader, testloader
 
 def get_base_dataloader(args):
@@ -122,7 +122,7 @@ def get_new_dataloader(args,session):
                                        index_path=txt_path)
     if args.dataset == 'swat':
         trainset = args.Dataset.Swat(root=args.dataroot, train=True,
-                                       index_path=txt_path)
+                                       index=np.arange(args.base_class + (session-1) * args.way, args.base_class + session * args.way))
     if args.batch_size_new == 0:
         batch_size_new = trainset.__len__()
         trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size_new, shuffle=False,

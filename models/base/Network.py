@@ -3,7 +3,8 @@ import torch.nn.functional as F
 from models.resnet18_encoder import *
 from models.resnet20_cifar import *
 from models.resnet18_cifar import resnet18_cifar
-from utils import identify_importance
+import models.resnet18_swat
+from utils import count_acc, identify_importance
 
 
 class MYNET(nn.Module):
@@ -26,23 +27,29 @@ class MYNET(nn.Module):
             self.encoder = resnet18(True, args)  # pretrained=True follow TOPIC, models for cub is imagenet pre-trained. https://github.com/xyutao/fscil/issues/11#issuecomment-687548790
             self.num_features = 512
         if self.args.dataset in ['swat']:
+            # self.encoder = nn.Sequential(
+            #     nn.Conv2d(1, 64, 3),
+            #     nn.BatchNorm2d(64),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2, stride=2),
+            #     nn.Dropout(0.3),
+            #     # nn.Conv2d(32, 64, 3),
+            #     # nn.BatchNorm2d(64),
+            #     # nn.ReLU(),
+            #     # nn.MaxPool2d(2, stride=2),
+            #     # nn.Dropout(0.3),
+            #     nn.Conv2d(64, 512, 3),
+            #     nn.BatchNorm2d(512),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2, stride=2),
+            #     nn.Dropout(0.3)
+            # )
+            # self.encoder[-5].is_warp_conv = True
             self.encoder = nn.Sequential(
                 nn.Embedding(256, 32),
-                nn.Conv2d(4, 32, (5, 1), padding=(1,0)),
-                nn.ReLU(),
-                nn.MaxPool2d(2, stride=2),
-                nn.Dropout(0.3),
-                nn.Conv2d(32, 64, (5, 1), padding=(1,0)),
-                nn.ReLU(),
-                nn.MaxPool2d(2, stride=2),
-                nn.Dropout(0.3),
-                nn.Conv2d(64, 32, (5, 1), padding=(1,0)),
-                nn.ReLU(),
-                nn.MaxPool2d(2, stride=2),
-                nn.Dropout(0.3)
+                models.resnet18_swat.resnet18(False, args)
             )
-            self.encoder[-4].is_warp_conv = True
-            self.num_features = 32
+            self.num_features = 512
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         self.fc = nn.Linear(self.num_features, self.args.num_classes, bias=False)
@@ -137,6 +144,7 @@ class MYNET(nn.Module):
                 fc = self.fc.weight[:self.args.base_class + self.args.way * session, :].detach()
                 data = self.encode(data_imgs)
                 logits = self.get_logits(data, fc)
+                acc = count_acc(logits, label)
 
                 loss = F.cross_entropy(logits, label)
                 optimizer_embedding.zero_grad()

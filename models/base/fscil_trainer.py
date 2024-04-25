@@ -10,6 +10,7 @@ from .helper import *
 from utils import *
 from dataloader.data_utils import *
 from models.switch_module import switch_module
+from tsne_torch import plot_sne
 
 
 class FSCILTrainer(Trainer):
@@ -186,6 +187,9 @@ class FSCILTrainer(Trainer):
                 print('  test acc={:.3f}'.format(self.trlog['max_acc'][session]))
 
                 result_list.append('Session {}, test Acc {:.3f}\n'.format(session, self.trlog['max_acc'][session]))
+
+        embedding_list, label_list = get_features(testloader, testloader.dataset.transform, self.model)
+        save_s_tne(embedding_list.numpy(), label_list.numpy())
 
         result_list.append('Base Session Best Epoch {}\n'.format(self.trlog['max_acc_epoch']))
         result_list.append(self.trlog['max_acc'])

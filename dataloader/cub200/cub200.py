@@ -126,7 +126,7 @@ if __name__ == '__main__':
     # class_index = open(txt_path).read().splitlines()
     base_class = 100
     class_index = np.arange(base_class)
-    dataroot = '~/dataloader/data'
+    dataroot = '../../data'
     batch_size_base = 400
     trainset = CUB200(root=dataroot, train=False,  index=class_index,
                       base_sess=True)
